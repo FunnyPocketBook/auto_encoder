@@ -1,4 +1,4 @@
-
+cifar-10-batches-py/*
 # Logs
 logs
 *.log

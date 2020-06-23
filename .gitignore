@@ -62,8 +62,6 @@ typings/
 .next
 
 # vscode
-.vscode/*
-ignore.txt
 
 # runscript
 run.vbs

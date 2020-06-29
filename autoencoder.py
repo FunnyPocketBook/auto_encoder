@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import pickle
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -53,32 +54,45 @@ class Model(nn.Module):
 
         # encode stage
         # input channels, output channels, kernel (2,2), maybe stride (2,2)
-        self.convolutional_0 = nn.Conv2d(3, 5, 8, 2)
-        self.linear_0 = nn.Linear(45, 10)
+        self.convolutional_0 = nn.Conv2d(3, 13, 3, 2)
+        self.convolutional_1 = nn.Conv2d(13, 26, 2, 2)
+        self.convolutional_2 = nn.Conv2d(26, 38, 2, 2)
+        self.convolutional_3 = nn.Conv2d(38, 48, 2, 2)
+        self.linear_0 = nn.Linear(48, 10)
 
         # decode stage
-        self.linear_1 = nn.Linear(10, 36)
-        self.deconvolutional_0 = nn.ConvTranspose2d(4, 6, 4, 2)
-        self.deconvolutional_1 = nn.ConvTranspose2d(6, 3, 11, 3)
+        self.linear_1 = nn.Linear(10, 16)
+        self.deconvolutional_0 = nn.ConvTranspose2d(1, 3, 2, 2)
+        self.deconvolutional_1 = nn.ConvTranspose2d(3, 6, 2, 2)
+        self.deconvolutional_2 = nn.ConvTranspose2d(6, 8, 3, 2)
+        #self.deconvolutional_3 = nn.ConvTranspose2d(10, 13, 2, 2)
+        self.linear_2 = nn.Linear(8712, 3072)
 
     def encoder(self, x):
         # Change channels from 3 to 5 and apply kernel with stride
-        x = F.leaky_relu(self.convolutional_0(x)) # Shape: [1, 3, 32, 32]
+        x = F.leaky_relu(self.convolutional_0(x)) # Shape: [1, 13, 15, 15]
+        x = F.leaky_relu(self.convolutional_1(x)) # Shape: [1, 26, 7, 7]
+        x = F.leaky_relu(self.convolutional_2(x)) # Shape: [1, 38, 3, 3]
+        x = F.leaky_relu(self.convolutional_3(x)) # Shape: [1, 48, 1, 1]
         # Reduce size of matrix by getting the maximum value of every 4x4 matrix
-        x = F.max_pool2d(x, 4) # Shape: [1, 5, 13, 13]
+        # x = F.max_pool2d(x, 4) # Shape: [1, 10, 7, 7]
         # Flatten the 4d matrix into 1d
-        x = torch.flatten(x) # Shape: [1, 5, 3, 3]
+        x = torch.flatten(x) # Shape: [48]
         # Reduce vector to 10 dimensions
-        x = F.leaky_relu(self.linear_0(x)) # Shape: [45]
-        # Shape: [10]
+        x = F.leaky_relu(self.linear_0(x)) # Shape: [10]
         return x
     
     # last linear torch.sigmoid instead of leaky_relu
     def decoder(self, x):
-        x = F.leaky_relu(self.linear_1(x)) # Shape: [10]
-        x = torch.reshape(x, (1, 4, 3, 3)) # Shape: [36]
-        x = F.leaky_relu(self.deconvolutional_0(x)) # Shape: [1, 6, 8, 8]
-        x = F.leaky_relu(self.deconvolutional_1(x)) # Shape: [1, 3, 32, 32]
+        x = F.leaky_relu(self.linear_1(x)) # Shape: [16]
+        x = torch.reshape(x, (1, 1, 4, 4)) # Shape: [1, 1, 4, 4]
+        x = F.leaky_relu(self.deconvolutional_0(x)) # Shape: [1, 3, 8, 8]
+        x = F.leaky_relu(self.deconvolutional_1(x)) # Shape: [1, 6, 16, 16]
+        x = F.leaky_relu(self.deconvolutional_2(x)) # Shape: [1, 8, 33, 33]
+        #x = F.leaky_relu(self.deconvolutional_3(x)) # Shape: [1, 13, 66, 66]
+        x = torch.flatten(x)
+        x = torch.sigmoid(self.linear_2(x))
+        x = torch.reshape(x, (1, 3, 32, 32))
         return x
     
     def forward(self, x):
@@ -87,60 +101,74 @@ class Model(nn.Module):
         return x
 
 # Shows input and output image
-def show_image(original, trained):
-    fig, axes = plt.subplots(2, 1)
-    axes[0].imshow(original)
-    axes[1].imshow(trained)
-    plt.tight_layout()
-    plt.show()
+def show_image(model, training_data, epoch, loss, n, start_time, save=False):
+    model.eval()
+    fig, axes = plt.subplots(2, len(training_data))
+    for i in range(0, len(training_data)):
+        original = training_data[i]
+        elem = training_data[i]
+        tensor = torch.from_numpy(elem).to(device)
+        trained = torch.tensor(elem, requires_grad=True).to(device)
+        trained = tensor.permute(2, 0, 1).unsqueeze(0)
+        trained = model(trained)
+        trained = np.moveaxis(trained.detach().cpu().numpy()[0], 0, 2)
+        axes[0, i].imshow(original)
+        axes[1, i].imshow(trained)
+    plt.tight_layout(w_pad=0.1, h_pad=1)
+    fig.set_size_inches(20, 5)
+    if save:
+        time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        plt.savefig("result/result_ep{1}_l{2:.4f}_n{3}.png".format(time, epoch, loss, n, start_time))
+    else:
+        plt.show()
     plt.clf()
     plt.close()
 
 # Actually training the data
 def training(model, training_data):
     # optimizer
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.002)
     # Function for getting the mean square error loss
-    criterion = nn.MSELoss()
+    # BCELoss 0.005 too high, loss is increasing again.
+    # BCELoss 0.002 fine for 10 images
+    # MSELoss 0.001 fine for 10 images, but grey with 100, even if the dense layer has been reduced
+    criterion = nn.BCELoss()
 
     iterations = 0
     running_loss = 0
     epoch = 0
-    max_epoch = 200
+    start_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    while (epoch < max_epoch):
-        for idx, elem in enumerate(training_data):
-            iterations += 1
-            # Create tensor from matrix
-            tensor = torch.from_numpy(elem).to(device)
-            # has shape (32, 32, 3)
-            # we want (1, 3, 32, 32)
-            # Change dimension positions
-            target = tensor.permute(2, 0, 1).unsqueeze(0)
-            # Reset optimizer for each data
-            optimizer.zero_grad()
-            output = model(target)
-            loss = criterion(output, target)
-            # Track loss
-            running_loss += loss.item()
-            print("loss: {0: .4f}, epoch: {1}, iterations: {2}"
-                .format(running_loss / iterations, epoch, iterations))
-            # Backtracking
-            loss.backward()
-            optimizer.step()
-        epoch += 1
-    
-    # Reconstructing original image for showing it
-    original = training_data[0]
-    model.eval()
-    reconstructed = torch.tensor(elem, requires_grad=True).to(device)
-    reconstructed = tensor.permute(2, 0, 1).unsqueeze(0)
-    reconstructed = model(reconstructed)
-    reconstructed = np.moveaxis(reconstructed.detach().cpu().numpy()[0], 0, 2)
-    show_image(original, reconstructed)
-
+    try:
+        while True:
+            for idx, elem in enumerate(training_data):
+                iterations += 1
+                # Create tensor from matrix
+                tensor = torch.from_numpy(elem).to(device)
+                # has shape (32, 32, 3)
+                # we want (1, 3, 32, 32)
+                # Change dimension positions
+                target = tensor.permute(2, 0, 1).unsqueeze(0)
+                # Reset optimizer for each data
+                optimizer.zero_grad()
+                output = model(target)
+                loss = criterion(output, target)
+                # Track loss
+                running_loss += loss.item()
+                print("loss: {0: .4f}, epoch: {1}, iterations: {2}"
+                    .format(running_loss / iterations, epoch, iterations))
+                if iterations % 1000 == 0:
+                    show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, save=True)
+                # Backtracking
+                loss.backward()
+                optimizer.step()
+            epoch += 1
+        show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, save=True)
+    except KeyboardInterrupt:
+        print("Keyboard interrupt")
+        show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, save=True)
 
 a = preprocess()
 auto_encoder = Model(32, 32, 3)
 auto_encoder.cuda(device)
-training(auto_encoder, a[0:1])
+training(auto_encoder, a[0:100])

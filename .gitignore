@@ -1,4 +1,6 @@
 cifar-10-batches-py/*
+result/*
+model/*
 # Logs
 logs
 *.log
@@ -58,8 +60,6 @@ typings/
 # dotenv environment variables file
 .env
 
-# next.js build output
-.next
 
 # vscode
 

@@ -58,11 +58,11 @@ class Model(nn.Module):
 
         # encode stage
         # input channels, output channels, kernel (2,2), maybe stride (2,2)
-        self.convolutional_0 = nn.Conv2d(3, 13, 3, 2)
+        self.convolutional_0 = nn.Conv2d(3, 13, 1, 1)
         self.convolutional_1 = nn.Conv2d(13, 26, 2, 2)
         self.convolutional_2 = nn.Conv2d(26, 38, 2, 2)
-        self.convolutional_3 = nn.Conv2d(38, 48, 2, 2)
-        self.linear_0 = nn.Linear(48, 10)
+        self.convolutional_3 = nn.Conv2d(38, 44, 2, 2)
+        self.linear_0 = nn.Linear(704, 10)
 
         # decode stage
         self.linear_1 = nn.Linear(10, 16)
@@ -79,10 +79,10 @@ class Model(nn.Module):
 
     def encoder(self, x):
         # Change channels from 3 to 5 and apply kernel with stride
-        x = F.leaky_relu(self.convolutional_0(x)) # Shape: [1, 13, 16, 16]
-        x = F.leaky_relu(self.convolutional_1(x)) # Shape: [1, 26, 8, 8]
-        x = F.leaky_relu(self.convolutional_2(x)) # Shape: [1, 38, 4, 4]
-        x = F.leaky_relu(self.convolutional_3(x)) # Shape: [1, 48, 2, 2]
+        x = F.leaky_relu(self.convolutional_0(x)) # Shape: [1, 13, 32, 32]
+        x = F.leaky_relu(self.convolutional_1(x)) # Shape: [1, 26, 16, 16]
+        x = F.leaky_relu(self.convolutional_2(x)) # Shape: [1, 38, 8, 8]
+        x = F.leaky_relu(self.convolutional_3(x)) # Shape: [1, 44, 4, 4]
         # Reduce size of matrix by getting the maximum value of every 4x4 matrix
         # x = F.max_pool2d(x, 4) # Shape: [1, 10, 7, 7]
         # Flatten the 4d matrix into 1d
@@ -143,6 +143,7 @@ def show_image(model, training_data, epoch, loss, n, start_time, model_name, sav
 
 
 def save_model(path, epoch, iterations, model, optimizer, loss, history_loss):
+    print("Saving model...")
     torch.save({
         "epoch": epoch,
         "iterations": iterations,
@@ -151,6 +152,19 @@ def save_model(path, epoch, iterations, model, optimizer, loss, history_loss):
         "loss": loss,
         "history_loss": history_loss
     }, path+".pt")
+    print("Model saved")
+    if epoch % 50 == 0:
+        print("Creating backup...")
+        torch.save({
+            "epoch": epoch,
+            "iterations": iterations,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": loss,
+            "history_loss": history_loss
+        }, path+"_e{0}.pt".format(epoch))
+        print("Backup created")
+
 
 # Actually training the data
 def training(model, training_data):
@@ -160,6 +174,7 @@ def training(model, training_data):
     # BCELoss 0.005 too high, loss is increasing again.
     # BCELoss 0.002 fine for 10 images
     # MSELoss 0.001 fine for 10 images, but grey with 100, even if the dense layer has been reduced
+    # MSELoss 0.003 kinda fine for 1000 images but there are still some artifacts. Not sure why, maybe too many in_channels in encoding stage
     if loss_function == "mse":
         criterion = nn.MSELoss()
     elif loss_function == "bce":

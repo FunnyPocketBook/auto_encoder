@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 device = torch.device('cuda') # Selects GPU
 torch.set_num_threads(1) # Per default all threads
 model_path = "model/model1.pt"
-learning_rate = 0.0003
+learning_rate = 0.0005
 loss_function = "mse"
 
 # DL01 ab 69, DL02 42-83, 93-152
@@ -59,10 +59,10 @@ class Model(nn.Module):
         # encode stage
         # input channels, output channels, kernel (2,2), maybe stride (2,2)
         self.convolutional_0 = nn.Conv2d(3, 13, 1, 1)
-        self.convolutional_1 = nn.Conv2d(13, 26, 2, 2)
+        self.convolutional_1 = nn.Conv2d(13, 26, 3, 2)
         self.convolutional_2 = nn.Conv2d(26, 38, 2, 2)
         self.convolutional_3 = nn.Conv2d(38, 44, 2, 2)
-        self.linear_0 = nn.Linear(704, 10)
+        self.linear_0 = nn.Linear(396, 10)
 
         # decode stage
         self.linear_1 = nn.Linear(10, 16)
@@ -121,14 +121,17 @@ def show_image(model, training_data, epoch, loss, n, start_time, model_name, sav
     for i in range(0, len(training_data)):
         original = training_data[i]
         elem = training_data[i]
+        fig.suptitle("Comparison, loss: {0:.6f}".format(loss))
         tensor = torch.from_numpy(elem).to(device)
         trained = torch.tensor(elem, requires_grad=True).to(device)
         trained = tensor.permute(2, 0, 1).unsqueeze(0)
         trained = model(trained)
         trained = np.moveaxis(trained.detach().cpu().numpy()[0], 0, 2)
+        axes[0, i].axis("off")
+        axes[1, i].axis("off")
         axes[0, i].imshow(original)
         axes[1, i].imshow(trained)
-    plt.tight_layout(w_pad=0.1, h_pad=1)
+    plt.tight_layout(w_pad=1, h_pad=10)
     fig.set_size_inches(20, 5)
     if save:
         time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -143,7 +146,7 @@ def show_image(model, training_data, epoch, loss, n, start_time, model_name, sav
 
 
 def save_model(path, epoch, iterations, model, optimizer, loss, history_loss):
-    print("Saving model...")
+    print("\nSaving model...")
     torch.save({
         "epoch": epoch,
         "iterations": iterations,
@@ -185,7 +188,8 @@ def training(model, training_data):
     history_loss = []
     epoch = 0
     start_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    model_name = "model_{0}_lr{1}_n{2}".format(loss_function, learning_rate, len(training_data))
+    model_note = ""
+    model_name = "model_{0}_lr{1}_n{2}{3}".format(loss_function, learning_rate, len(training_data), model_note)
     model_path = "model/{0}".format(model_name)
 
     try:
@@ -215,20 +219,20 @@ def training(model, training_data):
                 history_loss.append(loss)
                 # Track loss
                 running_loss += loss.item()
-                print("loss: {0: .6f}, epoch: {1}, iterations: {2}"
-                    .format(running_loss / iterations, epoch, iterations))
+                print("\rloss: {0: .6f}, epoch: {1}, iterations: {2}"
+                    .format(running_loss / iterations, epoch, iterations), end='')
                 if iterations % 1000 == 0:
-                    show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
+                    show_image(model, training_data[20:30], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
                 # Backtracking
                 loss.backward()
                 optimizer.step()
             epoch += 1
             save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss)
-        show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
+        show_image(model, training_data[20:30], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
     except KeyboardInterrupt:
         print("Keyboard interrupt")
+        show_image(model, training_data[20:30], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
         save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss)
-        show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), start_time, model_name, save=True)
 
 a = preprocess()
 auto_encoder = Model(32, 32, 3)

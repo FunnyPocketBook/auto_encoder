@@ -1,6 +1,7 @@
 cifar-10-batches-py/*
 result/*
 model/*
+__pycache__/*
 # Logs
 logs
 *.log

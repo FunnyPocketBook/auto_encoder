@@ -5,10 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: Visualization",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\visualization.py",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: AutoEncoder",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}\\autoencoder.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: Start",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\start.py",
             "console": "integratedTerminal"
         }
     ]

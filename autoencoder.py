@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 device = torch.device('cuda') # Selects GPU
 torch.set_num_threads(1) # Per default all threads
 model_path = "model/model1.pt"
-learning_rate = 0.0005
+learning_rate = 0.0006
 loss_function = "mse"
 
 # DL01 ab 69, DL02 42-83, 93-152
@@ -152,7 +152,7 @@ class Model(nn.Module):
         return x
 
 # Shows input and output image
-def show_image(model, training_data, epoch, loss, n, model_name, save=False):
+def show_image(model, training_data, epoch, loss, n, model_name, save=False, test=False):
     model.eval()
     fig, axes = plt.subplots(2, len(training_data))
     for i in range(0, len(training_data)):
@@ -174,31 +174,34 @@ def show_image(model, training_data, epoch, loss, n, model_name, save=False):
         directory = "result/{0}".format(model_name)
         if not os.path.exists(directory):
             os.makedirs(directory)
-        plt.savefig("{4}/{0}_result_ep{1}_l{2:.6f}_n{3}.png".format(time, epoch, loss, n, directory))
+        if test:
+            plt.savefig("{0}/result_test_ep{1}_n{2}.png".format(directory, epoch, n))
+        else:
+            plt.savefig("{4}/{0}_result_ep{1}_l{2:.6f}_n{3}.png".format(time, epoch, loss, n, directory))
     else:
         plt.show()
     plt.clf()
     plt.close()
 
-def show_loss(model_name, history_loss, n, epoch, save=False):
+def show_loss(history_loss, n, epoch, save=False):
     plt.plot(range(0,len(history_loss)), history_loss)
     if save:
-        directory = "result/{0}".format(model_name)
-        plt.savefig("{2}/loss_ep{0}_n{1}.png".format(epoch, n, directory))
+        plt.savefig("loss_ep{0}_n{1}_lr{2}.png".format(epoch, n, learning_rate))
     else:
         plt.show()
     plt.clf()
     plt.close()
 
 
-def save_model(path, epoch, iterations, model, optimizer, loss, history_loss):
+def save_model(path, epoch, iterations, model, optimizer, loss, history_loss, current_index):
     torch.save({
         "epoch": epoch,
         "iterations": iterations,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "loss": loss,
-        "history_loss": history_loss
+        "history_loss": history_loss,
+        "current_index": current_index
     }, path+".pt")
 
 
@@ -221,6 +224,7 @@ def training(model, training_data, test_data):
     running_loss = 0
     history_loss = []
     epoch = 0
+    current_index = 0
     model_note = ""
     model_name = "model_{0}_lr{1}_n{2}{3}".format(loss_function, learning_rate, len(training_data), model_note)
     #model_name = "model_mse_lr0.0005_n50000"
@@ -229,6 +233,7 @@ def training(model, training_data, test_data):
     try:
         checkpoint = torch.load(model_path+".pt")
         epoch = checkpoint["epoch"]
+        current_index = checkpoint["current_index"]
         iterations = checkpoint["iterations"]
         model.load_state_dict(checkpoint["model_state_dict"])
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -242,8 +247,9 @@ def training(model, training_data, test_data):
     progress = ""
     try:
         while True:
-            for idx, elem in enumerate(training_data):
+            for idx, elem in enumerate(training_data, start=current_index):
                 iterations += 1
+                current_index = idx
                 time = datetime.datetime.now()
                 # Create tensor from matrix
                 tensor = torch.from_numpy(elem).to(device)
@@ -257,8 +263,8 @@ def training(model, training_data, test_data):
                 running_loss += loss.item()
                 loss_current = running_loss / iterations
                 history_loss.append(loss_current)
-                if iterations % 1000 == 0:
-                    show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True)
+                if iterations % 10000 == 0:
+                    show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
                 # Backtracking
                 loss.backward()
                 optimizer.step()
@@ -266,24 +272,26 @@ def training(model, training_data, test_data):
                 ring_buffer.add(time.microseconds)
                 elapsed = datetime.datetime.now() - start_time
                 elapsed = elapsed - datetime.timedelta(microseconds=elapsed.microseconds)
-                remaining = datetime.timedelta(microseconds=ring_buffer.avg() * (len(training_data) - idx))
+                remaining = datetime.timedelta(microseconds=ring_buffer.avg() * (len(training_data) - iterations%len(training_data)))
                 remaining = remaining - datetime.timedelta(microseconds=remaining.microseconds)
                 if iterations % 50 == 0:
-                    progress = "\rTraining on n={0}: loss: {6:.6f} | epoch: {5: >3} | {1: >6}/{0} | {2: >4}ms/iteration | elapsed: {3:>8} | remaining: {4:>8}" \
+                    progress = "\rTraining on n={0}: loss: {6:.6f} | iterations: {7: >8} | epoch: {5: >3} | {1: >6}/{0} | {2: >4}ms/iteration | elapsed: {3:>8} | remaining: {4:>8}" \
                         .format(len(training_data),
-                            iterations%len(training_data),
+                            current_index,
                             int(ring_buffer.avg()/1000),
                             str(elapsed),
                             str(remaining), 
                             epoch, 
-                            running_loss/iterations)
+                            running_loss/iterations,
+                            iterations)
                     print(progress, end="")
             epoch += 1
-            save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss)
-            print("")
-        show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True)
+            save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index+1)
+            show_loss(history_loss, len(training_data), epoch, save=True)
+            show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
     except KeyboardInterrupt:
         print("\nKeyboard interrupt")
-        #show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True)
-        save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss)
-    show_loss(model_name, history_loss, len(training_data), epoch, save=True)
+        show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
+        show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
+        save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index+1)
+        show_loss(history_loss, len(training_data), epoch, save=True)

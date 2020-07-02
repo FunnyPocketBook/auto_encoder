@@ -26,7 +26,7 @@ def generate_pairplot(auto_encoder, data):
     dataframe = pd.DataFrame(data=np.array(imgs), columns=["feature_0", "feature_1", "feature_2", "feature_3", "feature_4", "feature_5", "feature_6", "feature_7", "feature_8", "feature_9"])
     g = sns.pairplot(dataframe)
     plt.tight_layout()
-    plt.savefig("splom.png")
+    plt.savefig("splom_{0}.png".format(model_name))
     plt.clf()
 
 def generate_scatterplot(auto_encoder, data, labels):
@@ -48,7 +48,7 @@ def generate_scatterplot(auto_encoder, data, labels):
     )
     fig.set_size_inches(15, 15)
     plt.tight_layout()
-    plt.savefig("umap.png")
+    plt.savefig("umap_{0}.png".format(model_name))
     plt.clf()
 
 ae = autoencoder.Model(32, 32, 3)
@@ -56,8 +56,9 @@ ae.cuda(autoencoder.device)
 data = autoencoder.preprocess()
 test = autoencoder.load_test_batch()
 labels, test_labels = autoencoder.load_labels()
-checkpoint = torch.load("model/model_mse_lr0.0005_n50000.pt", map_location="cpu")
+model_name = "model_mse_lr0.0006_n50000.pt"
+checkpoint = torch.load("model/"+model_name, map_location="cpu")
 ae.load_state_dict(checkpoint["model_state_dict"])
 ae.eval()
-#generate_pairplot(ae, test)
+generate_pairplot(ae, test)
 generate_scatterplot(ae, test, test_labels)

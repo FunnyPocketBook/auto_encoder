@@ -186,7 +186,7 @@ def show_image(model, training_data, epoch, loss, n, model_name, save=False, tes
 def show_loss(history_loss, n, epoch, save=False):
     plt.plot(range(0,len(history_loss)), history_loss)
     if save:
-        plt.savefig("loss_ep{0}_n{1}_lr{2}.png".format(epoch, n, learning_rate))
+        plt.savefig("loss/loss_ep{0}_n{1}_lr{2}.png".format(epoch, n, learning_rate))
     else:
         plt.show()
     plt.clf()
@@ -249,7 +249,7 @@ def training(model, training_data, test_data):
         while True:
             for idx, elem in enumerate(training_data, start=current_index):
                 iterations += 1
-                current_index = idx
+                current_index = idx+1
                 time = datetime.datetime.now()
                 # Create tensor from matrix
                 tensor = torch.from_numpy(elem).to(device)
@@ -286,12 +286,12 @@ def training(model, training_data, test_data):
                             iterations)
                     print(progress, end="")
             epoch += 1
-            save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index+1)
+            save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index)
             show_loss(history_loss, len(training_data), epoch, save=True)
             show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
     except KeyboardInterrupt:
         print("\nKeyboard interrupt")
         show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
         show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
-        save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index+1)
+        save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index)
         show_loss(history_loss, len(training_data), epoch, save=True)

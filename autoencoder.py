@@ -26,26 +26,23 @@ def deserialize(path):
     with open(path, 'rb') as file:
         return pickle.load(file, encoding='bytes')
 
-# Reshape the matrix from a (10000, 3072) matrix to a (10000, 3, 32, 32) matrix
 def reshape(matrix):
     matrix = matrix.reshape((10000, 3, 1024))
     matrix = matrix.reshape((10000, 3, 32, 32))
-    return np.moveaxis(matrix, 1, -1) # Move channel dimension to the last dimension
+    return np.moveaxis(matrix, 1, -1)
 
 def preprocess():
-    data = reshape(deserialize("cifar-10-batches-py/data_batch_1")[b'data']) # Load data of batch 1
-    for i in range(2,6): # Add data of batches 2-5 into data
+    data = reshape(deserialize("cifar-10-batches-py/data_batch_1")[b'data'])
+    for i in range(2,6):
         batch = reshape(deserialize("cifar-10-batches-py/data_batch_" + str(i))[b'data'])
-        # data is in format (10000, 3072)
         data = np.append(data, batch, axis=0)
     return np.float32(data / 255)
 
 def load_labels():
-    labels = deserialize("cifar-10-batches-py/data_batch_1")[b'labels'] # Load data of batch 1
-    for i in range(2,6): # Add data of batches 2-5 into data
+    labels = deserialize("cifar-10-batches-py/data_batch_1")[b'labels']
+    for i in range(2,6):
         batch = deserialize("cifar-10-batches-py/data_batch_" + str(i))[b'labels']
-        # data is in format (10000, 3072)
-        labels = np.append(labels, batch, axis=0)
+        labels += batch
     test_labels = deserialize("cifar-10-batches-py/test_batch")[b'labels']
     return labels, test_labels
 
@@ -100,7 +97,6 @@ class Model(nn.Module):
         self.channels = channels
 
         # encode stage
-        # input channels, output channels, kernel (2,2), maybe stride (2,2)
         self.convolutional_0 = nn.Conv2d(3, 13, 1)
         self.convolutional_1 = nn.Conv2d(13, 26, 2, 2)
         self.convolutional_2 = nn.Conv2d(26, 38, 2, 2)
@@ -113,37 +109,27 @@ class Model(nn.Module):
         self.deconvolutional_1 = nn.ConvTranspose2d(5, 9, 2, 2)
         self.deconvolutional_2 = nn.ConvTranspose2d(9, 14, 3, 2)
         self.deconvolutional_3 = nn.ConvTranspose2d(14, 19, 2, 1)
-        self.linear_2 = nn.Linear(self.get_decode_lin_shape(), 3072)
-
-    def get_decode_lin_shape(self):
-        x = torch.randn([1, 1, 4, 4])
-        x = self.decode_conv(x)
-        return x.size()[0]
+        self.linear_2 = nn.Linear(9196, 3072)
 
     def encoder(self, x):
-        # Change channels from 3 to 5 and apply kernel with stride
         x = F.leaky_relu(self.convolutional_0(x)) # Shape: [1, 13, 32, 32]
-        x = F.leaky_relu(self.convolutional_1(x)) # Shape: [1, 26, 26, 26]
+        x = F.leaky_relu(self.convolutional_1(x)) # Shape: [1, 26, 16, 16]
         x = F.leaky_relu(self.convolutional_2(x)) # Shape: [1, 38, 8, 8]
         x = F.leaky_relu(self.convolutional_3(x)) # Shape: [1, 45, 3, 3]
-        x = torch.flatten(x) # Shape: [48]
+        x = torch.flatten(x) # Shape: [405]
         x = F.leaky_relu(self.linear_0(x)) # Shape: [10]
         return x
     
     def decoder(self, x):
         x = F.leaky_relu(self.linear_1(x)) # Shape: [16]
-        x = torch.reshape(x, (1, 1, 4, 4))
-        x = self.decode_conv(x)
-        x = torch.sigmoid(self.linear_2(x))
-        x = torch.reshape(x, (1, 3, 32, 32))
-        return x
-
-    def decode_conv(self, x):
+        x = torch.reshape(x, (1, 1, 4, 4)) # Shape: [1, 1, 4, 4]
         x = F.leaky_relu(self.deconvolutional_0(x)) # Shape: [1, 5, 5, 5]
         x = F.leaky_relu(self.deconvolutional_1(x)) # Shape: [1, 9, 10, 10]
         x = F.leaky_relu(self.deconvolutional_2(x)) # Shape: [1, 14, 21, 21]
         x = F.leaky_relu(self.deconvolutional_3(x)) # Shape: [1, 19, 22, 22]
-        x = torch.flatten(x)
+        x = torch.flatten(x) # Shape: [9196]
+        x = torch.sigmoid(self.linear_2(x)) # Shape: [3072]
+        x = torch.reshape(x, (1, 3, 32, 32)) # Shape: [1, 3, 32, 32]
         return x
 
     def forward(self, x):
@@ -202,11 +188,11 @@ def save_model(path, epoch, iterations, model, optimizer, loss, history_loss, cu
         "loss": loss,
         "history_loss": history_loss,
         "current_index": current_index
-    }, path+".pt")
+    }, path+".hdf5")
 
 
 # Actually training the data
-def training(model, training_data, test_data):
+def training(model, training_data, test_data, original_data=[]):
     # optimizer
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     # Function for getting the mean square error loss
@@ -226,12 +212,12 @@ def training(model, training_data, test_data):
     epoch = 0
     current_index = 0
     model_note = ""
-    model_name = "model_{0}_lr{1}_n{2}{3}".format(loss_function, learning_rate, len(training_data), model_note)
-    #model_name = "model_mse_lr0.0005_n50000"
-    model_path = "model/{0}".format(model_name)
+    #model_name = "model_{0}_lr{1}_n{2}{3}".format(loss_function, learning_rate, len(training_data), model_note)
+    model_name = "model"
+    model_path = f"model/{model_name}"
 
     try:
-        checkpoint = torch.load(model_path+".pt")
+        checkpoint = torch.load(model_path+".hdf5")
         epoch = checkpoint["epoch"]
         current_index = checkpoint["current_index"]
         iterations = checkpoint["iterations"]
@@ -247,15 +233,14 @@ def training(model, training_data, test_data):
     progress = ""
     try:
         while True:
-            for idx, elem in enumerate(training_data, start=current_index):
+            for idx, elem in enumerate(training_data[current_index:], start=current_index):
+                if current_index > len(training_data):
+                    break
                 iterations += 1
                 current_index = idx+1
                 time = datetime.datetime.now()
-                # Create tensor from matrix
                 tensor = torch.from_numpy(elem).to(device)
-                # Change dimension positions
                 target = tensor.permute(2, 0, 1).unsqueeze(0)
-                # Reset optimizer for each data
                 optimizer.zero_grad()
                 output = model(target)
                 loss = criterion(output, target)
@@ -274,7 +259,7 @@ def training(model, training_data, test_data):
                 elapsed = elapsed - datetime.timedelta(microseconds=elapsed.microseconds)
                 remaining = datetime.timedelta(microseconds=ring_buffer.avg() * (len(training_data) - iterations%len(training_data)))
                 remaining = remaining - datetime.timedelta(microseconds=remaining.microseconds)
-                if iterations % 50 == 0:
+                if current_index % 50 == 0:
                     progress = "\rTraining on n={0}: loss: {6:.6f} | iterations: {7: >8} | epoch: {5: >3} | {1: >6}/{0} | {2: >4}ms/iteration | elapsed: {3:>8} | remaining: {4:>8}" \
                         .format(len(training_data),
                             current_index,
@@ -285,13 +270,19 @@ def training(model, training_data, test_data):
                             running_loss/iterations,
                             iterations)
                     print(progress, end="")
+            print("")
+            current_index = 0
             epoch += 1
             save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index)
             show_loss(history_loss, len(training_data), epoch, save=True)
             show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
+            if len(original_data) > 0:
+                show_image(model, original_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
     except KeyboardInterrupt:
         print("\nKeyboard interrupt")
         show_image(model, test_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=True)
         show_image(model, training_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
+        if len(original_data) > 0:
+            show_image(model, original_data[0:10], epoch, running_loss/iterations, len(training_data), model_name, save=True, test=False)
         save_model(model_path, epoch, iterations, model, optimizer, running_loss, history_loss, current_index)
         show_loss(history_loss, len(training_data), epoch, save=True)

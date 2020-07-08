@@ -12,6 +12,13 @@
             "console": "integratedTerminal"
         },
         {
+            "name": "Python: Stability",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}\\stability.py",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: Querying",
             "type": "python",
             "request": "launch",

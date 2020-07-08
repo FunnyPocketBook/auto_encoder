@@ -2,6 +2,8 @@ cifar-10-batches-py/*
 result/*
 model/*
 __pycache__/*
+*.hdf5
+*.bin
 # Logs
 logs
 *.log
